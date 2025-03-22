@@ -1,0 +1,1 @@
+{"audio_filepath": "./tts-audio.wav", "duration": 0.0, "taskname": "s2t_translation", "source_lang": "en", "target_lang": "de", "pnc": "yes", "prompt_format": "canary2"}
