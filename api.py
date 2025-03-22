@@ -17,6 +17,7 @@ app = FastAPI(title="Canary ASR API")
 # Define request model
 class TranscriptionRequest(BaseModel):
     audio_path: str
+    target_lang: str | None = None  # Optional target language for translation
 
 # Load model at startup
 print("Loading Canary model...")
@@ -33,6 +34,8 @@ print("Model loaded and configured")
 async def transcribe_audio(request: TranscriptionRequest):
     try:
         print(f"Transcribing audio from: {request.audio_path}")
+        if request.target_lang:
+            print(f"Will translate to: {request.target_lang}")
 
         # Get audio duration
         audio_info = sf.info(request.audio_path)
@@ -41,41 +44,51 @@ async def transcribe_audio(request: TranscriptionRequest):
         # Update the manifest file with the new audio path
         manifest_entry = {
             "audio_filepath": request.audio_path,
-            "duration": audio_duration,  # Now using actual duration
-            "taskname": "asr",
+            "duration": audio_duration,
+            "taskname": "s2t_translation" if request.target_lang else "asr",
             "source_lang": "en",
-            "target_lang": "en",
-            "pnc": "yes"
+            "target_lang": request.target_lang if request.target_lang else "en",
+            "pnc": "yes",
+            "prompt_format": "canary2" if request.target_lang else None
         }
 
-        # Write to the existing manifest file
-        with open("asr_manifest.json", "w") as f:
+        manifest_file = "translation_manifest.json" if request.target_lang else "asr_manifest.json"
+
+        # Write to the appropriate manifest file
+        with open(manifest_file, "w") as f:
             json.dump(manifest_entry, f)
 
         # Start timing
         start_time = time.time()
 
-        # Run transcription and get the text from the first result
-        transcriptions = canary_model.transcribe(
-            audio="asr_manifest.json",
+        # Run transcription/translation
+        results = canary_model.transcribe(
+            audio=manifest_file,
             batch_size=1
         )
 
         # Calculate elapsed time
         elapsed_time = time.time() - start_time
 
-        # Get the text property from the first result
-        transcription_text = transcriptions[0].text
+        # Get the text from the first result
+        result_text = results[0].text
 
         # Calculate RTF (Real-Time Factor)
         rtf = elapsed_time / audio_duration
 
-        return {
-            "transcription": transcription_text,
+        response = {
+            "text": result_text,
             "processing_time_seconds": round(elapsed_time, 2),
             "audio_duration_seconds": round(audio_duration, 2),
             "rtf": round(rtf, 2)
         }
+
+        # Add translation info if applicable
+        if request.target_lang:
+            response["source_lang"] = "en"
+            response["target_lang"] = request.target_lang
+
+        return response
 
     except Exception as e:
         print(f"Exception occurred: {str(e)}")

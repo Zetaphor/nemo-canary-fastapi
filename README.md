@@ -1,10 +1,11 @@
 # Canary ASR API
 
-A FastAPI-based REST API for NVIDIA's family of Canary-1B ASR (Automatic Speech Recognition) models.
+A FastAPI-based REST API for NVIDIA's family of Canary-1B ASR (Automatic Speech Recognition) models with support for translation.
 
 ## Features
 
 - Fast and accurate speech-to-text transcription
+- Optional translation to other languages
 - Real-time factor (RTF) calculation
 - Processing time metrics
 - Simple REST API interface
@@ -46,19 +47,40 @@ The server will start on `http://localhost:8000`
 
 ### Send transcription requests:
 
+For simple transcription (ASR):
 ```bash
 curl -X POST "http://localhost:8000/transcribe" \
     -H "Content-Type: application/json" \
     -d '{"audio_path": "/path/to/audio.wav"}'
 ```
 
-### Example Response
+For transcription with translation:
+```bash
+curl -X POST "http://localhost:8000/transcribe" \
+    -H "Content-Type: application/json" \
+    -d '{"audio_path": "/path/to/audio.wav", "target_lang": "de"}'
+```
 
+### Example Responses
+
+ASR only:
 ```json
 {
-    "transcription": "Hello, world!",
+    "text": "Hello, world!",
     "processing_time_seconds": 0.12,
     "audio_duration_seconds": 1.0,
     "rtf": 0.12
+}
+```
+
+With translation:
+```json
+{
+    "text": "Hallo, Welt!",
+    "processing_time_seconds": 0.15,
+    "audio_duration_seconds": 1.0,
+    "rtf": 0.15,
+    "source_lang": "en",
+    "target_lang": "de"
 }
 ```
