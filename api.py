@@ -20,6 +20,7 @@ class TranscriptionRequest(BaseModel):
 
 # Load model at startup
 print("Loading Canary model...")
+# nvidia/canary-1b, nvidia/canary-1b-flash, or nvidia/canary-180m-flash
 canary_model = EncDecMultiTaskModel.from_pretrained('nvidia/canary-1b')
 
 # Configure decoding parameters

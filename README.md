@@ -24,7 +24,19 @@ cd nemo-canary-fastapi
 uv sync
 ```
 
-3. Run the API:
+3. Change the model in `api.py`:
+
+Available models:
+
+- [`nvidia/canary-1b`](https://huggingface.co/nvidia/canary-1b)
+- [`nvidia/canary-1b-flash`](https://huggingface.co/nvidia/canary-1b-flash)
+- [`nvidia/canary-180m-flash`](https://huggingface.co/nvidia/canary-180m-flash)
+
+```python
+canary_model = EncDecMultiTaskModel.from_pretrained('nvidia/canary-1b')
+```
+
+## Run the API:
 
 ```bash
 python api.py
@@ -32,7 +44,7 @@ python api.py
 
 The server will start on `http://localhost:8000`
 
-2. Send transcription requests:
+### Send transcription requests:
 
 ```bash
 curl -X POST "http://localhost:8000/transcribe" \
