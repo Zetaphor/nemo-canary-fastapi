@@ -5,12 +5,6 @@ import json
 import time
 import soundfile as sf
 
-"""
-curl -X POST "http://localhost:8000/transcribe" \
-    -H "Content-Type: application/json" \
-    -d '{"audio_path": "audio.wav"}'
-"""
-
 # Initialize FastAPI app
 app = FastAPI(title="Canary ASR API")
 
