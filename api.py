@@ -8,6 +8,8 @@ import time
 import soundfile as sf
 from urllib.parse import urlparse
 import tempfile
+import io
+import requests
 
 # Initialize FastAPI app
 app = FastAPI(title="Canary ASR API")
@@ -33,52 +35,68 @@ decode_cfg.beam.beam_size = 1
 canary_model.change_decoding_strategy(decode_cfg)
 print("Model loaded and configured")
 
-def download_audio(url: str) -> str:
-    """Download audio from URL and return the local file path"""
-    # Create temp directory if it doesn't exist
-    temp_dir = "temp_audio"
-    os.makedirs(temp_dir, exist_ok=True)
-
-    # Extract filename from URL or generate one
-    parsed_url = urlparse(url)
-    filename = os.path.basename(parsed_url.path)
-    if not filename:
-        filename = f"audio_{int(time.time())}.wav"
-
-    local_path = os.path.join(temp_dir, filename)
-
-    # Download the file
+def download_audio(url: str) -> tuple:
+    """Download audio from URL and return the audio data and filename"""
     try:
-        urllib.request.urlretrieve(url, local_path)
-        return local_path
+        # Extract filename from URL or generate one
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename:
+            filename = f"audio_{int(time.time())}.wav"
+
+        # Download the file into memory
+        response = requests.get(url)
+        response.raise_for_status()
+        audio_data = io.BytesIO(response.content)
+
+        return audio_data, filename
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to download audio: {str(e)}")
 
 @app.post("/transcribe")
 async def transcribe_audio(request: TranscriptionRequest):
     try:
+        # Start timing for the entire process
+        total_start_time = time.time()
+        io_time = 0
+
         # Determine if input is URL or file path
         is_url = urlparse(request.audio_source).scheme in ['http', 'https']
 
+        # Start timing for I/O operations
+        io_start_time = time.time()
+
         if is_url:
             print(f"Downloading audio from URL: {request.audio_source}")
-            audio_path = download_audio(request.audio_source)
+            audio_data, filename = download_audio(request.audio_source)
         else:
-            audio_path = request.audio_source
-            if not os.path.exists(audio_path):
-                raise HTTPException(status_code=404, detail=f"Audio file not found: {audio_path}")
+            # Read file into memory
+            if not os.path.exists(request.audio_source):
+                raise HTTPException(status_code=404, detail=f"Audio file not found: {request.audio_source}")
 
-        print(f"Processing audio from: {audio_path}")
+            with open(request.audio_source, 'rb') as f:
+                audio_data = io.BytesIO(f.read())
+            filename = os.path.basename(request.audio_source)
+
+        print(f"Processing audio: {filename}")
         if request.target_lang:
             print(f"Will translate to: {request.target_lang}")
 
-        # Get audio duration
-        audio_info = sf.info(audio_path)
+        # Get audio duration directly from the in-memory data
+        audio_data.seek(0)
+        audio_info = sf.info(audio_data)
         audio_duration = audio_info.duration
 
-        # Update the manifest file with the new audio path
+        # Create a temporary file for the audio data
+        # (NeMo requires a file path for transcription)
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_audio_file:
+            audio_data.seek(0)
+            temp_audio_file.write(audio_data.read())
+            temp_audio_path = temp_audio_file.name
+
+        # Create manifest in memory
         manifest_entry = {
-            "audio_filepath": audio_path,
+            "audio_filepath": temp_audio_path,
             "duration": audio_duration,
             "taskname": "s2t_translation" if request.target_lang else "asr",
             "source_lang": "en",
@@ -87,50 +105,64 @@ async def transcribe_audio(request: TranscriptionRequest):
             "prompt_format": "canary2" if request.target_lang else None
         }
 
-        manifest_file = "translation_manifest.json" if request.target_lang else "asr_manifest.json"
+        # Create a temporary file for the manifest
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_manifest_file:
+            json.dump(manifest_entry, temp_manifest_file)
+            manifest_path = temp_manifest_file.name
 
-        # Write to the appropriate manifest file
-        with open(manifest_file, "w") as f:
-            json.dump(manifest_entry, f)
+        # Calculate I/O time
+        io_time += time.time() - io_start_time
 
-        # Start timing
-        start_time = time.time()
+        try:
+            # Start timing for inference
+            inference_start_time = time.time()
 
-        # Run transcription/translation
-        results = canary_model.transcribe(
-            audio=manifest_file,
-            batch_size=1
-        )
+            # Run transcription/translation
+            results = canary_model.transcribe(
+                audio=manifest_path,
+                batch_size=1
+            )
 
-        # Calculate elapsed time
-        elapsed_time = time.time() - start_time
+            # Calculate inference time
+            inference_time = time.time() - inference_start_time
 
-        # Get the text from the first result
-        result_text = results[0].text
+            # Start timing for cleanup I/O
+            io_start_time = time.time()
 
-        # Calculate RTF (Real-Time Factor)
-        rtf = elapsed_time / audio_duration
+            # Get the text from the first result
+            result_text = results[0].text
 
-        response = {
-            "text": result_text,
-            "processing_time_seconds": round(elapsed_time, 2),
-            "audio_duration_seconds": round(audio_duration, 2),
-            "rtf": round(rtf, 2)
-        }
+            # Calculate total elapsed time
+            total_elapsed_time = time.time() - total_start_time
 
-        # Add translation info if applicable
-        if request.target_lang:
-            response["source_lang"] = "en"
-            response["target_lang"] = request.target_lang
+            # Calculate RTF (Real-Time Factor) based on inference time only
+            rtf = inference_time / audio_duration
 
-        # Cleanup downloaded file if it was from URL
-        if is_url:
+            response = {
+                "text": result_text,
+                "total_time_seconds": round(total_elapsed_time, 2),
+                "inference_time_seconds": round(inference_time, 2),
+                "io_time_seconds": round(io_time, 2),
+                "audio_duration_seconds": round(audio_duration, 2),
+                "rtf": round(rtf, 2)
+            }
+
+            # Add translation info if applicable
+            if request.target_lang:
+                response["source_lang"] = "en"
+                response["target_lang"] = request.target_lang
+
+            return response
+
+        finally:
+            # Clean up temporary files
+            io_start_time = time.time()
             try:
-                os.remove(audio_path)
+                os.unlink(temp_audio_path)
+                os.unlink(manifest_path)
             except:
                 pass
-
-        return response
+            io_time += time.time() - io_start_time
 
     except Exception as e:
         print(f"Exception occurred: {str(e)}")
