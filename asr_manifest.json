@@ -1,1 +1,1 @@
-{"audio_filepath": "/home/zetaphor/Code/nemo-test/tts-audio.wav", "duration": 3.6693333333333333, "taskname": "asr", "source_lang": "en", "target_lang": "en", "pnc": "yes"}
+{"audio_filepath": "temp_audio/V2DCuY.wav", "duration": 1.7066666666666668, "taskname": "asr", "source_lang": "en", "target_lang": "en", "pnc": "yes", "prompt_format": null}
