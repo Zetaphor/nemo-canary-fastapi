@@ -41,18 +41,13 @@ git clone https://github.com/zetaphor/nemo-canary-fastapi.git
 cd nemo-canary-fastapi
 ```
 
-2. Create and activate a virtual environment:
+2. Install dependencies:
 ```bash
-python -m venv venv
+uv sync
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
-```bash
-uv pip install -e .
-```
-
-4. Change the model in `api.py` if desired:
+3. Change the model in `api.py` if desired:
 
 Available models:
 - [`nvidia/canary-1b`](https://huggingface.co/nvidia/canary-1b)
@@ -63,7 +58,7 @@ Available models:
 canary_model = EncDecMultiTaskModel.from_pretrained('nvidia/canary-1b')
 ```
 
-5. Run the API:
+4. Run the API:
 ```bash
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
